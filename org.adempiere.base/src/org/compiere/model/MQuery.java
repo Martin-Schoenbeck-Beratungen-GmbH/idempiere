@@ -273,6 +273,8 @@ public class MQuery implements Serializable, Cloneable
 			return "AD_User_ID";
 		if (columnName.equals("C_DocTypeTarget_ID"))
 			return "C_DocType_ID";
+		if (columnName.equals("Bill_User_ID"))
+			return "AD_User_ID";
 		if (columnName.equals("Bill_BPartner_ID"))
 			return "C_BPartner_ID";
 		if (columnName.equals("Bill_Location_ID") || columnName.equals("BillTo_ID"))
