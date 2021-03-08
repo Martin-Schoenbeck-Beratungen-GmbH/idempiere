@@ -95,6 +95,7 @@ public final class ImpFormatRow
 	//
 	private Callout[]			m_callout = null;
 	private String[]			m_method = null;
+	private String				importprefix = "";
 	//
 	private SimpleDateFormat	m_dformat = null;
 	private int					m_maxLength = 0;
@@ -266,9 +267,10 @@ public final class ImpFormatRow
 	 *  @param divideBy100 divide number by 100
 	 *  @param constantValue constant value
 	 *  @param callout Java callout
+	 *  @param importprefix Prefix to be added if value is not null or empty
 	 */
 	public void setFormatInfo (String dataFormat, String decimalPoint, boolean divideBy100,
-		String constantValue, String callout)
+		String constantValue, String callout, String importprefix)
 	{
 		if (dataFormat == null)
 			m_dataFormat = "";
@@ -328,6 +330,12 @@ public final class ImpFormatRow
 					m_callout = null;
 				}
 			}
+		}
+		//import prefix
+		if (importprefix != null) {
+			this.importprefix = importprefix;
+		} else {
+			this.importprefix = "";
 		}
 	}   //  setFormatInfo
 
@@ -486,6 +494,8 @@ public final class ImpFormatRow
 			else
 				out.append(c);
 		}
+		if (out.toString().trim().length() > 0)
+			out.insert(0, importprefix);
 		return out.toString();
 	}	//	parseString
 

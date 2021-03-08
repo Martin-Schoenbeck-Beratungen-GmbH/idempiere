@@ -54,7 +54,7 @@ public class CalloutEngine implements Callout
 	private GridTab m_mTab;
 	private GridField m_mField;
 	protected String[] additionalArgs;
-	public static final String ARG_SEPERATOR = ",";
+	public static final String ARG_SEPARATOR = ",";
 
 	/**
 	 *	Start Callout.
@@ -146,7 +146,7 @@ public class CalloutEngine implements Callout
 		if(methodAndArgs.contains("(") && methodAndArgs.substring(methodAndArgs.indexOf("(")).contains(")")) {
 			methodName = methodAndArgs.substring(0, methodAndArgs.indexOf('('));
 			additionalArgs = methodAndArgs.substring(methodAndArgs.indexOf("(")+1, methodAndArgs.indexOf(")"))
-					.split(","); //Everything between the brackets, seperated by commas, is considered additional arguments
+					.split(ARG_SEPARATOR); //Everything between the brackets, seperated by commas, is considered additional arguments
 		} else {
 			methodName = methodAndArgs;
 		}
