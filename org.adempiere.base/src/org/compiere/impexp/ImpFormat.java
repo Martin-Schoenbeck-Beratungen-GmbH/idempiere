@@ -365,12 +365,33 @@ public final class ImpFormat
 			//	Label-Start
 			if (withLabel)
 			{
-				entry.append(row.getColumnName());
-				entry.append("=");
-				if (row.isString())
-					entry.append("'");
-				else if (row.isDate())
-					entry.append("TO_DATE('");
+				//start concat mechanic
+				boolean concat = false;
+				
+				//only act if we combine String or Constant
+				if (row.isString() || row.isConstant())
+					//if the list contains an entry for the same column, remove the old one and concatenate the two
+					for (int j = 0; j < list.size(); j++) {
+						if (list.get(j).startsWith(row.getColumnName() + "=")) {
+							concat = true;
+							entry.append(list.get(j));
+							
+							if (entry.charAt(entry.length()-1) == '\'')
+								entry.deleteCharAt(entry.length()-1); //remove "'" for strings
+							
+							list.remove(j);
+							break;
+						}
+					} //end concat mechanic
+				
+				if (!concat) {
+					entry.append(row.getColumnName());
+					entry.append("=");
+					if (row.isString())
+						entry.append("'");
+					else if (row.isDate())
+						entry.append("TO_DATE('");
+				}
 			}
 
 			//	Get Data
