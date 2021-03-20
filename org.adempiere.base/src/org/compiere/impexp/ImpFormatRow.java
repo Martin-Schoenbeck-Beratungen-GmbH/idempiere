@@ -425,8 +425,8 @@ public final class ImpFormatRow
 		}
 		//
 		if (retValue == null)
-			retValue = "";
-		return retValue.trim();
+			retValue = "";		
+		return (retValue.trim().length() > 0 ? importprefix : "") + retValue.trim();
 	}	//	parse
 
 	
@@ -494,8 +494,6 @@ public final class ImpFormatRow
 			else
 				out.append(c);
 		}
-		if (out.toString().trim().length() > 0)
-			out.insert(0, importprefix);
 		return out.toString();
 	}	//	parseString
 
