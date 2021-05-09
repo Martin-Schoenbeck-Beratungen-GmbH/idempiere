@@ -146,6 +146,9 @@ public class NumberBox extends Div
 					        String separator = Character.toString(separatorChar);
 					        curValue = curValue.replace(".", separator);
 				        }
+						if ("0".equals(curValue)) {
+							curValue = "";
+						}
 					}
 					String txtCalcId = txtCalc.getId();
 					Clients.evalJavaScript("calc.append('" + txtCalcId + "', '" + curValue + "')");
