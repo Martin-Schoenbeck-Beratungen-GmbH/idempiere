@@ -48,6 +48,7 @@ import javax.mail.internet.MimeMultipart;
 
 import org.compiere.model.MClient;
 import org.compiere.model.MSysConfig;
+
 import com.sun.mail.smtp.SMTPMessage;
 
 /**
@@ -263,6 +264,7 @@ public final class EMail implements Serializable
 		if (CLogMgt.isLevelFinest())
 			props.put("mail.debug", "true");
 		//
+
 		Session session = null;
 		try
 		{
@@ -280,8 +282,14 @@ public final class EMail implements Serializable
 			{
 				props.put("mail.smtp.starttls.enable", "true");
 			}
-
-			session = Session.getInstance(props, m_auth);
+			if (m_auth != null && m_auth.isOAuth2()) {
+				props.put("mail.smtp.auth.mechanisms", "XOAUTH2");
+			    props.put("mail.smtp.starttls.required", "true");
+			    props.put("mail.smtp.auth.login.disable","true");
+			    props.put("mail.smtp.auth.plain.disable","true");
+			    props.put("mail.debug.auth", "true");
+			}
+			session = Session.getInstance(props);
 			session.setDebug(CLogMgt.isLevelFinest());
 		}
 		catch (SecurityException se)
@@ -300,7 +308,6 @@ public final class EMail implements Serializable
 		Transport t = null;
 		try
 		{
-		//	m_msg = new MimeMessage(session);
 			m_msg = new SMTPMessage(session);
 			//	Addresses
 			m_msg.setFrom(m_from);
@@ -353,14 +360,8 @@ public final class EMail implements Serializable
 			m_msg.setHeader("Comments", "iDempiereMail");
 			if (m_acknowledgementReceipt)
 				m_msg.setHeader("Disposition-Notification-To", m_from.getAddress());
-		//	m_msg.setDescription("Description");
-			//	SMTP specifics
-			//m_msg.setAllow8bitMIME(true);
-			//	Send notification on Failure & Success - no way to set envid in Java yet
-		//	m_msg.setNotifyOptions (SMTPMessage.NOTIFY_FAILURE | SMTPMessage.NOTIFY_SUCCESS);
 			//	Bounce only header
 			m_msg.setReturnOption (SMTPMessage.RETURN_HDRS);
-		//	m_msg.setHeader("X-Mailer", "msgsend");
 			if (additionalHeaders.size() > 0) {
 				for (ValueNamePair vnp : additionalHeaders) {
 					m_msg.setHeader(vnp.getName(), vnp.getValue());
@@ -369,26 +370,24 @@ public final class EMail implements Serializable
 			//
 			setContent();
 			m_msg.saveChanges();
-		//	log.fine("message =" + m_msg);
-			//
-		//	Transport.send(msg);
 			t = session.getTransport("smtp");
-		//	log.fine("transport=" + t);
-			t.connect();
-		//	t.connect(m_smtpHost, user, password);
-		//	log.fine("transport connected");
+			if (m_auth != null) {
+				t.connect(m_smtpHost, m_smtpPort, m_auth.getPasswordAuthentication().getUserName(), m_auth.getPasswordAuthentication().getPassword());
+			} else {
+				t.connect();
+			}
 			ClassLoader tcl = Thread.currentThread().getContextClassLoader();
 			try {
 				Thread.currentThread().setContextClassLoader(javax.mail.Session.class.getClassLoader());
-				Transport.send(m_msg);
+				t.sendMessage(m_msg, m_msg.getAllRecipients());
 			} finally {
 				Thread.currentThread().setContextClassLoader(tcl);
 			}
-		//	t.sendMessage(msg, msg.getAllRecipients());
 			if (log.isLoggable(Level.FINE)) log.fine("Success - MessageID=" + m_msg.getMessageID());
 		}
 		catch (MessagingException me)
 		{
+			me.printStackTrace();
 			Exception ex = me;
 			StringBuilder sb = new StringBuilder("(ME)");
 			boolean printed = false;
@@ -578,14 +577,13 @@ public final class EMail implements Serializable
 	 */
 	public EMailAuthenticator createAuthenticator (String username, String password)
 	{
-		if (username == null || password == null)
+		if (username == null)
 		{
-			log.warning("Ignored - " +  username + "/" + password);
+			log.warning("Ignored - username null");
 			m_auth = null;
 		}
 		else
 		{
-		//	log.fine("setEMailUser: " + username + "/" + password);
 			m_auth = new EMailAuthenticator (username, password);
 		}
 		return m_auth;

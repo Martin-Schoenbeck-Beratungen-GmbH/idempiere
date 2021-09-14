@@ -19,7 +19,9 @@ package org.compiere.model;
 import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.Hashtable;
 import java.util.List;
@@ -31,6 +33,7 @@ import org.adempiere.base.Core;
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.exceptions.BPartnerNoBillToAddressException;
 import org.adempiere.exceptions.BPartnerNoShipToAddressException;
+import org.adempiere.exceptions.DBException;
 import org.adempiere.exceptions.FillMandatoryException;
 import org.adempiere.model.ITaxProvider;
 import org.adempiere.process.SalesOrderRateInquiryProcess;
@@ -2047,12 +2050,12 @@ public class MOrder extends X_C_Order implements DocAction
 		MInvoice lastInvoice = invoices[0];
 		BigDecimal grandTotal = lastInvoice.getGrandTotal();
 		
-		List<X_C_POSPayment> pps = new Query(this.getCtx(), X_C_POSPayment.Table_Name, "C_Order_ID=?", this.get_TrxName())
+		List<MPOSPayment> pps = new Query(this.getCtx(), MPOSPayment.Table_Name, "C_Order_ID=?", this.get_TrxName())
 			.setParameters(this.getC_Order_ID())
 			.setOnlyActiveRecords(true)
 			.list();
 		BigDecimal totalPOSPayments = Env.ZERO; 
-		for (X_C_POSPayment pp : pps) {
+		for (MPOSPayment pp : pps) {
 			totalPOSPayments = totalPOSPayments.add(pp.getPayAmt());
 		}
 		if (totalPOSPayments.compareTo(grandTotal) != 0)
@@ -2081,7 +2084,7 @@ public class MOrder extends X_C_Order implements DocAction
 
 		// Create a payment for each non-guarantee record
 		// associate the payment id and mark the record as processed
-		for (X_C_POSPayment pp : pps) {
+		for (MPOSPayment pp : pps) {
 			X_C_POSTenderType  tt = new X_C_POSTenderType (getCtx(),pp.getC_POSTenderType_ID(), get_TrxName());
 			if (tt.isGuarantee())
 				continue;
@@ -3000,4 +3003,61 @@ public class MOrder extends X_C_Order implements DocAction
 		return getC_DocType_ID() > 0 ? getC_DocType_ID() : getC_DocTypeTarget_ID();
 	}
 
+	/**
+	 * 
+	 * @return payment amount for order (prepayment + invoice payment)
+	 */
+	public BigDecimal getPaymentAmt()
+	{
+		BigDecimal orderPaid = null;
+		String sql = "SELECT SUM(currencyconvertpayment(p.c_payment_id, o.c_currency_id, p.PayAmt+p.DiscountAmt+p.WriteOffAmt, null) "
+				+ " - paymentallocated(p.c_payment_id, o.c_currency_id) "
+				+ " * (CASE WHEN p.IsReceipt='Y' THEN 1 ELSE -1 END)) "
+				+ "FROM C_Payment p "
+				+ "INNER JOIN C_Order o ON (p.C_Order_ID=o.C_Order_ID) "
+				+ "WHERE p.C_Order_ID=? AND p.AD_Client_ID=? "
+				+ "AND p.IsActive='Y' AND p.DocStatus IN ('CO','CL') ";
+				
+		try (PreparedStatement pstmt = DB.prepareStatement(sql, get_TrxName());)
+		{			
+			pstmt.setInt(1, getC_Order_ID());
+			pstmt.setInt(2, getAD_Client_ID());
+			ResultSet rs = pstmt.executeQuery();
+			if (rs.next())
+			{
+				orderPaid = rs.getBigDecimal(1);
+			}
+		}
+		catch (SQLException e)
+		{
+			throw new DBException(e, sql);
+		}
+		
+		BigDecimal invoicePaid = null;
+		sql = "SELECT SUM(invoicepaid(i.c_invoice_id, o.c_currency_id, 1)) "
+				+ "FROM C_Invoice i "
+				+ "INNER JOIN C_Order o ON (i.C_Order_ID=o.C_Order_ID) "
+				+ "WHERE i.C_Order_ID=? AND i.AD_Client_ID=? "
+				+ "AND i.IsActive='Y' AND i.DocStatus IN ('CO','CL') ";
+				
+		try (PreparedStatement pstmt = DB.prepareStatement(sql, get_TrxName());)
+		{			
+			pstmt.setInt(1, getC_Order_ID());
+			pstmt.setInt(2, getAD_Client_ID());
+			ResultSet rs = pstmt.executeQuery();
+			if (rs.next())
+			{
+				invoicePaid = rs.getBigDecimal(1);
+			}
+		}
+		catch (SQLException e)
+		{
+			throw new DBException(e, sql);
+		}
+		
+		BigDecimal retValue = orderPaid != null ? orderPaid : BigDecimal.ZERO;
+		if (invoicePaid != null)
+			retValue = retValue.add(invoicePaid);
+		return retValue;
+	}
 }	//	MOrder

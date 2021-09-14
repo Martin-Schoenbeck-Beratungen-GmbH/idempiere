@@ -912,7 +912,7 @@ public class InfoWindow extends InfoPanel implements ValueChangeListener, EventL
 		if (! colSQL.toUpperCase().contains(" AS "))
 			colSQL += " AS " + infoColumn.getColumnName();
         editorMap.put(colSQL, editor);
-        Class<?> colClass = columnName.endsWith("_ID") ? KeyNamePair.class : String.class;
+        Class<?> colClass = columnName.endsWith("_ID") || columnName.equals("CreatedBy") || columnName.equals("UpdatedBy") ? KeyNamePair.class : String.class;
 		ColumnInfo columnInfo = new ColumnInfo(infoColumn.getNameTrl(), colSQL, colClass, (String)null, infoColumn.isReadOnly() || haveNotProcess);
 		return columnInfo;
 	}
@@ -1930,6 +1930,9 @@ public class InfoWindow extends InfoPanel implements ValueChangeListener, EventL
 	 */
 	protected boolean testCount(boolean promptError)
 	{
+		if (useQueryTimeoutFromSysConfig)
+			queryTimeout = MSysConfig.getIntValue(MSysConfig.ZK_INFO_QUERY_TIME_OUT, 0, Env.getAD_Client_ID(Env.getCtx()));
+		
 		long start = System.currentTimeMillis();
 		String dynWhere = getSQLWhere();
 		StringBuilder sql = new StringBuilder (m_sqlMain);
@@ -1972,7 +1975,17 @@ public class InfoWindow extends InfoPanel implements ValueChangeListener, EventL
 		}
 		catch (Exception e)
 		{
-			log.log(Level.SEVERE, countSql, e);
+			if (e instanceof SQLException && DB.getDatabase().isQueryTimeout((SQLException) e))
+			{
+				if (log.isLoggable(Level.INFO))
+					log.log(Level.INFO, countSql, e);
+				FDialog.error(p_WindowNo, INFO_QUERY_TIME_OUT_ERROR);
+			}
+			else
+			{
+				log.log(Level.SEVERE, countSql, e);
+				FDialog.error(p_WindowNo, "DBExecuteError", e.getMessage());
+			}
 			m_count = -2;
 		}
 		finally
@@ -2063,6 +2076,7 @@ public class InfoWindow extends InfoPanel implements ValueChangeListener, EventL
 						}
 						columnInfo.setColDescription(infoColumn.getDescriptionTrl());
 						columnInfo.setGridField(getGridField(infoColumn));
+						columnInfo.setAD_Reference_ID(infoColumn.getAD_Reference_ID());
 						list.add(columnInfo);
 					}
 

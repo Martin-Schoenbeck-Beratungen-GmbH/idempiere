@@ -112,7 +112,7 @@ public abstract class PO
 	/**
 	 * 
 	 */
-	private static final long serialVersionUID = -7231417421289556724L;
+	private static final long serialVersionUID = 571979727987834997L;
 
 	public static final String LOCAL_TRX_PREFIX = "POSave";
 
@@ -2417,10 +2417,10 @@ public abstract class PO
 			m_createNew = false;
 		}
 		if (!newRecord) {
-			CacheMgt.get().reset(p_info.getTableName(), get_ID());
+			Adempiere.getThreadPoolExecutor().submit(() -> CacheMgt.get().reset(p_info.getTableName(), get_ID()));
 			MRecentItem.clearLabel(p_info.getAD_Table_ID(), get_ID());
 		} else if (get_ID() > 0 && success)
-			CacheMgt.get().newRecord(p_info.getTableName(), get_ID());
+			Adempiere.getThreadPoolExecutor().submit(() -> CacheMgt.get().newRecord(p_info.getTableName(), get_ID()));
 		
 		return success;
 	}	//	saveFinish
@@ -3579,7 +3579,7 @@ public abstract class PO
 				int size = p_info.getColumnCount();
 				m_oldValues = new Object[size];
 				m_newValues = new Object[size];
-				CacheMgt.get().reset(p_info.getTableName(), Record_ID);
+				Adempiere.getThreadPoolExecutor().submit(() -> CacheMgt.get().reset(p_info.getTableName(), Record_ID));
 			}
 		}
 		finally
@@ -3715,37 +3715,50 @@ public abstract class PO
 		//check whether db have working generate_uuid function.
 		boolean uuidFunction = DB.isGenerateUUIDSupported();
 
-		//uuid column
-		int uuidColumnId = DB.getSQLValue(get_TrxName(), "SELECT col.AD_Column_ID FROM AD_Column col INNER JOIN AD_Table tbl ON col.AD_Table_ID = tbl.AD_Table_ID WHERE tbl.TableName=? AND col.ColumnName=?",
-					tableName+"_Trl", PO.getUUIDColumnName(tableName+"_Trl"));
+		String trlTableName = tableName + "_Trl";
+		MTable trlTable = MTable.get(getCtx(), trlTableName, get_TrxName());
+		if (trlTable == null) {
+			throw new AdempiereException("Translation table " + trlTableName + " does not exist");
+		}
+		MColumn uuidColumn = trlTable.getColumn(PO.getUUIDColumnName(trlTableName));
 
 		StringBuilder sql = new StringBuilder ("INSERT INTO ")
 			.append(tableName).append("_Trl (AD_Language,")
 			.append(keyColumn).append(", ")
 			.append(iColumns)
 			.append(" IsTranslated,AD_Client_ID,AD_Org_ID,Created,Createdby,Updated,UpdatedBy");
-		if (uuidColumnId > 0 && uuidFunction)
+		if (uuidColumn != null && uuidFunction)
 			sql.append(",").append(PO.getUUIDColumnName(tableName+"_Trl")).append(" ) ");
 		else
 			sql.append(" ) ");
 		sql.append("SELECT l.AD_Language,t.")
 			.append(keyColumn).append(", ")
 			.append(sColumns)
-			.append(" 'N',t.AD_Client_ID,t.AD_Org_ID,t.Created,t.Createdby,t.Updated,t.UpdatedBy");
-		if (uuidColumnId > 0 && uuidFunction)
+			.append(" CASE WHEN l.AD_Language=c.AD_Language THEN 'Y' ELSE 'N' END AS IsTranslated,t.AD_Client_ID,t.AD_Org_ID,t.Created,t.Createdby,t.Updated,t.UpdatedBy");
+		if (uuidColumn != null && uuidFunction)
 			sql.append(",Generate_UUID() ");
 		else
 			sql.append(" ");
-		sql.append("FROM AD_Language l, ").append(tableName).append(" t ")
-			.append("WHERE l.IsActive='Y' AND l.IsSystemLanguage='Y' AND l.IsBaseLanguage='N' AND t.")
+		sql.append("FROM AD_Language l, ").append(tableName).append(" t, AD_Client c ")
+			.append("WHERE t.AD_Client_ID=c.AD_Client_ID AND l.IsActive='Y' AND l.IsSystemLanguage='Y' AND l.IsBaseLanguage='N' AND t.")
 			.append(keyColumn).append("=").append(get_ID())
 			.append(" AND NOT EXISTS (SELECT * FROM ").append(tableName)
 			.append("_Trl tt WHERE tt.AD_Language=l.AD_Language AND tt.")
 			.append(keyColumn).append("=t.").append(keyColumn).append(")");
-		int no = DB.executeUpdate(sql.toString(), m_trxName);
-		if (uuidColumnId > 0 && !uuidFunction) {
-			MColumn column = new MColumn(getCtx(), uuidColumnId, get_TrxName());
-			UUIDGenerator.updateUUID(column, get_TrxName());
+		int no = -1;
+		try {
+			no = DB.executeUpdateEx(sql.toString(), m_trxName);
+		} catch (DBException e) {
+			String msg;
+			if (DBException.isValueTooLarge(e)) {
+				msg = Msg.getMsg(getCtx(), "MismatchTrlColumnSize");
+			} else {
+				msg = "insertTranslations -> " + e.getLocalizedMessage();
+			}
+			throw new AdempiereException(msg, e);
+		}
+		if (uuidColumn != null && !uuidFunction) {
+			UUIDGenerator.updateUUID(uuidColumn, get_TrxName());
 		}
 		if (log.isLoggable(Level.FINE)) log.fine("#" + no);
 		return no > 0;
@@ -3765,9 +3778,6 @@ public abstract class PO
 			return true;
 
 		String tableName = p_info.getTableName();
-		if (tableName.startsWith("AD") && getAD_Client_ID() == 0)
-			return true;
-
 		//
 		boolean trlColumnChanged = false;
 		for (int i = 0; i < p_info.getColumnCount(); i++)
@@ -3820,12 +3830,15 @@ public abstract class PO
 			}
 		}
 		StringBuilder whereid = new StringBuilder(" WHERE ").append(keyColumn).append("=").append(get_ID());
-		StringBuilder andlang = new StringBuilder(" AND AD_Language=").append(DB.TO_STRING(client.getAD_Language()));
-		StringBuilder andnotlang = new StringBuilder(" AND AD_Language!=").append(DB.TO_STRING(client.getAD_Language()));
+		StringBuilder andClientLang = new StringBuilder(" AND AD_Language=").append(DB.TO_STRING(client.getAD_Language()));
+		StringBuilder andNotClientLang = new StringBuilder(" AND AD_Language!=").append(DB.TO_STRING(client.getAD_Language()));
+		String baselang = Language.getBaseAD_Language();
+		StringBuilder andBaseLang = new StringBuilder(" AND AD_Language=").append(DB.TO_STRING(baselang));
+		StringBuilder andNotBaseLang = new StringBuilder(" AND AD_Language!=").append(DB.TO_STRING(baselang));
 		int no = -1;
 
+	  try {
 		if (client.isMultiLingualDocument()) {
-			String baselang = Language.getBaseAD_Language();
 			if (client.getAD_Language().equals(baselang)) {
 				// tenant language = base language
 				// set all translations as untranslated
@@ -3833,18 +3846,19 @@ public abstract class PO
 					.append(sqlupdate)
 					.append("IsTranslated='N'")
 					.append(whereid);
-				no = DB.executeUpdate(sqlexec.toString(), m_trxName);
+				no = DB.executeUpdateEx(sqlexec.toString(), m_trxName);
 				if (log.isLoggable(Level.FINE)) log.fine("#" + no);
 			} else {
 				// tenant language <> base language
-				// auto update translation for tenant language
+				// for Tenants auto update translation for tenant language
+				// for System update translation for base language (which in fact must always update zero records as there must not be translations for base)
 				StringBuilder sqlexec = new StringBuilder()
 					.append(sqlupdate)
 					.append(sqlcols)
 					.append("IsTranslated='Y'")
 					.append(whereid)
-					.append(andlang);
-				no = DB.executeUpdate(sqlexec.toString(), m_trxName);
+					.append(getAD_Client_ID() == 0 ? andBaseLang : andClientLang);
+				no = DB.executeUpdateEx(sqlexec.toString(), m_trxName);
 				if (log.isLoggable(Level.FINE)) log.fine("#" + no);
 				if (no >= 0) {
 					// set other translations as untranslated
@@ -3852,8 +3866,8 @@ public abstract class PO
 						.append(sqlupdate)
 						.append("IsTranslated='N'")
 						.append(whereid)
-						.append(andnotlang);
-					no = DB.executeUpdate(sqlexec.toString(), m_trxName);
+						.append(getAD_Client_ID() == 0 ? andNotBaseLang : andNotClientLang);
+					no = DB.executeUpdateEx(sqlexec.toString(), m_trxName);
 					if (log.isLoggable(Level.FINE)) log.fine("#" + no);
 				}
 			}
@@ -3865,9 +3879,19 @@ public abstract class PO
 				.append(sqlcols)
 				.append("IsTranslated='Y'")
 				.append(whereid);
-			no = DB.executeUpdate(sqlexec.toString(), m_trxName);
+			no = DB.executeUpdateEx(sqlexec.toString(), m_trxName);
 			if (log.isLoggable(Level.FINE)) log.fine("#" + no);
 		}
+	  } catch (DBException e) {
+		String msg;
+		if (DBException.isValueTooLarge(e)) {
+			msg = Msg.getMsg(getCtx(), "MismatchTrlColumnSize");
+		} else {
+			msg = "updateTranslations -> " + e.getLocalizedMessage();
+		}
+		throw new AdempiereException(msg, e);
+	  }
+
 		return no >= 0;
 	}	//	updateTranslations
 
@@ -3897,16 +3921,16 @@ public abstract class PO
 
 	/**
 	 * 	Insert Accounting Records
-	 *	@param acctTable accounting sub table
+	 *	@param acctTableName accounting sub table
 	 *	@param acctBaseTable acct table to get data from
 	 *	@param whereClause optional where clause with alias "p" for acctBaseTable
 	 *	@return true if records inserted
 	 */
-	protected boolean insert_Accounting (String acctTable,
+	protected boolean insert_Accounting (String acctTableName,
 		String acctBaseTable, String whereClause)
 	{
 		if (s_acctColumns == null	//	cannot cache C_BP_*_Acct as there are 3
-			|| acctTable.startsWith("C_BP_"))
+			|| acctTableName.startsWith("C_BP_"))
 		{
 			s_acctColumns = new ArrayList<String>();
 			String sql = "SELECT c.ColumnName "
@@ -3917,14 +3941,14 @@ public abstract class PO
 			try
 			{
 				pstmt = DB.prepareStatement (sql, null);
-				pstmt.setString (1, acctTable);
+				pstmt.setString (1, acctTableName);
 				rs = pstmt.executeQuery ();
 				while (rs.next ())
 					s_acctColumns.add (rs.getString(1));
 			}
 			catch (Exception e)
 			{
-				log.log(Level.SEVERE, acctTable, e);
+				log.log(Level.SEVERE, acctTableName, e);
 			}
 			finally {
 				DB.close(rs, pstmt);
@@ -3932,14 +3956,14 @@ public abstract class PO
 			}
 			if (s_acctColumns.size() == 0)
 			{
-				log.severe ("No Columns for " + acctTable);
+				log.severe ("No Columns for " + acctTableName);
 				return false;
 			}
 		}
 
 		//	Create SQL Statement - INSERT
 		StringBuilder sb = new StringBuilder("INSERT INTO ")
-			.append(acctTable)
+			.append(acctTableName)
 			.append(" (").append(get_TableName())
 			.append("_ID, C_AcctSchema_ID, AD_Client_ID,AD_Org_ID,IsActive, Created,CreatedBy,Updated,UpdatedBy ");
 		for (int i = 0; i < s_acctColumns.size(); i++)
@@ -3948,26 +3972,27 @@ public abstract class PO
 		//check whether db have working generate_uuid function.
 		boolean uuidFunction = DB.isGenerateUUIDSupported();
 
-		//uuid column
-		int uuidColumnId = DB.getSQLValue(get_TrxName(), "SELECT col.AD_Column_ID FROM AD_Column col INNER JOIN AD_Table tbl ON col.AD_Table_ID = tbl.AD_Table_ID WHERE tbl.TableName=? AND col.ColumnName=?",
-				acctTable, PO.getUUIDColumnName(acctTable));
-		if (uuidColumnId > 0 && uuidFunction)
-			sb.append(",").append(PO.getUUIDColumnName(acctTable));
+		MTable acctTable = MTable.get(getCtx(), acctTableName, get_TrxName());
+		if (acctTableName == null) {
+			throw new AdempiereException("Accounting table " + acctTableName + " does not exist");
+		}
+		MColumn uuidColumn = acctTable.getColumn(PO.getUUIDColumnName(acctTableName));
+		if (uuidColumn != null && uuidFunction)
+			sb.append(",").append(PO.getUUIDColumnName(acctTableName));
 		//	..	SELECT
 		sb.append(") SELECT ").append(get_ID())
 			.append(", p.C_AcctSchema_ID, p.AD_Client_ID,0,'Y', getDate(),")
 			.append(getUpdatedBy()).append(",getDate(),").append(getUpdatedBy());
 		for (int i = 0; i < s_acctColumns.size(); i++)
 			sb.append(",p.").append(s_acctColumns.get(i));
-		//uuid column
-		if (uuidColumnId > 0 && uuidFunction)
+		if (uuidColumn != null && uuidFunction)
 			sb.append(",generate_uuid()");
 		//	.. 	FROM
 		sb.append(" FROM ").append(acctBaseTable)
 			.append(" p WHERE p.AD_Client_ID=").append(getAD_Client_ID());
 		if (whereClause != null && whereClause.length() > 0)
 			sb.append (" AND ").append(whereClause);
-		sb.append(" AND NOT EXISTS (SELECT * FROM ").append(acctTable)
+		sb.append(" AND NOT EXISTS (SELECT * FROM ").append(acctTableName)
 			.append(" e WHERE e.C_AcctSchema_ID=p.C_AcctSchema_ID AND e.")
 			.append(get_TableName()).append("_ID=").append(get_ID()).append(")");
 		//
@@ -3976,13 +4001,12 @@ public abstract class PO
 			if (log.isLoggable(Level.FINE)) log.fine("#" + no);
 		} else {
 			log.warning("#" + no
-					+ " - Table=" + acctTable + " from " + acctBaseTable);
+					+ " - Table=" + acctTableName + " from " + acctBaseTable);
 		}
 
 		//fall back to the slow java client update code
-		if (uuidColumnId > 0 && !uuidFunction) {
-			MColumn column = new MColumn(getCtx(), uuidColumnId, get_TrxName());
-			UUIDGenerator.updateUUID(column, get_TrxName());
+		if (uuidColumn != null && !uuidFunction) {
+			UUIDGenerator.updateUUID(uuidColumn, get_TrxName());
 		}
 		return no > 0;
 	}	//	insert_Accounting
@@ -4018,26 +4042,28 @@ public abstract class PO
 	 */
 	protected boolean insert_Tree (String treeType, int C_Element_ID)
 	{
-		String tableName = MTree_Base.getNodeTableName(treeType);
+		String treeTableName = MTree_Base.getNodeTableName(treeType);
 
 		//check whether db have working generate_uuid function.
 		boolean uuidFunction = DB.isGenerateUUIDSupported();
 
-		//uuid column
-		int uuidColumnId = DB.getSQLValue(get_TrxName(), "SELECT col.AD_Column_ID FROM AD_Column col INNER JOIN AD_Table tbl ON col.AD_Table_ID = tbl.AD_Table_ID WHERE tbl.TableName=? AND col.ColumnName=?",
-				tableName, PO.getUUIDColumnName(tableName));
+		MTable treeTable = MTable.get(getCtx(), treeTableName, get_TrxName());
+		if (treeTable == null) {
+			throw new AdempiereException("Tree table " + treeTableName + " does not exist");
+		}
+		MColumn uuidColumn = treeTable.getColumn(PO.getUUIDColumnName(treeTableName));
 
 		StringBuilder sb = new StringBuilder ("INSERT INTO ")
-			.append(tableName)
+			.append(treeTableName)
 			.append(" (AD_Client_ID,AD_Org_ID, IsActive,Created,CreatedBy,Updated,UpdatedBy, "
 				+ "AD_Tree_ID, Node_ID, Parent_ID, SeqNo");
-		if (uuidColumnId > 0 && uuidFunction)
-			sb.append(", ").append(PO.getUUIDColumnName(tableName)).append(") ");
+		if (uuidColumn != null && uuidFunction)
+			sb.append(", ").append(PO.getUUIDColumnName(treeTableName)).append(") ");
 		else
 			sb.append(") ");
 		sb.append("SELECT t.AD_Client_ID, 0, 'Y', getDate(), "+getUpdatedBy()+", getDate(), "+getUpdatedBy()+","
 				+ "t.AD_Tree_ID, ").append(get_ID()).append(", 0, 999");
-		if (uuidColumnId > 0 && uuidFunction)
+		if (uuidColumn != null && uuidFunction)
 			sb.append(", Generate_UUID() ");
 		else
 			sb.append(" ");
@@ -4062,10 +4088,8 @@ public abstract class PO
 				log.warning("#" + no + " - TreeType=" + treeType);
 		}
 
-		if (uuidColumnId > 0 && !uuidFunction )
-		{
-			MColumn column = new MColumn(getCtx(), uuidColumnId, get_TrxName());
-			UUIDGenerator.updateUUID(column, get_TrxName());
+		if (uuidColumn != null && !uuidFunction ) {
+			UUIDGenerator.updateUUID(uuidColumn, get_TrxName());
 		}
 		return no > 0;
 	}	//	insert_Tree
@@ -5111,6 +5135,28 @@ public abstract class PO
 		}
 		fks_cache.put(get_Table_ID(), retValue);
 		return retValue;
+	}
+
+	/**
+	 * Verify if a column exists
+	 * @param columnName
+	 * @param throwException - must throw an exception when the column doesn't exist
+	 * @return
+	 */
+	public boolean columnExists(String columnName, boolean throwException) {
+		int idx = get_ColumnIndex(columnName);
+		if (idx < 0 && throwException)
+			throw new AdempiereException("Column " + get_TableName() +"." + columnName + " not found");
+		return (idx >= 0);
+	}
+
+	/**
+	 * Verify if a column exists
+	 * @param columnName
+	 * @return boolean
+	 */
+	public boolean columnExists(String columnName) {
+		return columnExists(columnName, false);
 	}
 
 }   //  PO

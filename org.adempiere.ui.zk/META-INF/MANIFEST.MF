@@ -80,7 +80,6 @@ Export-Package: fi.jawsy.jawwa.zk.atmosphere,
  org.adempiere.webui.factory,
  org.adempiere.webui.grid,
  org.adempiere.webui.info,
- org.adempiere.webui.install,
  org.adempiere.webui.panel,
  org.adempiere.webui.panel.action,
  org.adempiere.webui.part,
@@ -167,7 +166,8 @@ Require-Bundle: org.adempiere.base;bundle-version="0.0.0",
  com.itextpdf;bundle-version="0.0.0",
  org.atmosphere.runtime;bundle-version="0.0.0",
  zkwebfragment,
- com.sun.activation.jakarta.activation;bundle-version="1.2.1"
+ com.sun.activation.jakarta.activation;bundle-version="1.2.1",
+ org.adempiere.base.process
 Bundle-Activator: org.adempiere.webui.WebUIActivator
 Eclipse-ExtensibleAPI: true
 Web-ContextPath: webui
