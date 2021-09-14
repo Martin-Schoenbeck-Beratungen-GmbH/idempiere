@@ -31,6 +31,8 @@
     <stringAttribute key="productFile" value="/org.adempiere.server-feature/server.product"/>
     <setAttribute key="selected_target_bundles">
         <setEntry value="bcprov@default:default"/>
+        <setEntry value="com.google.gson@default:default"/>
+        <setEntry value="com.google.guava@default:default"/>
         <setEntry value="com.google.zxing.core@default:default"/>
         <setEntry value="com.itextpdf@default:default"/>
         <setEntry value="com.jaspersoft.studio.bundles.barbecue@default:default"/>
@@ -43,6 +45,7 @@
         <setEntry value="org.apache.activemq.activemq-core@default:default"/>
         <setEntry value="org.apache.activemq.kahadb@default:default"/>
         <setEntry value="org.apache.ant@default:default"/>
+        <setEntry value="org.apache.commons.codec@default:default"/>
         <setEntry value="org.apache.commons.collections@default:default"/>
         <setEntry value="org.apache.commons.commons-collections4@default:default"/>
         <setEntry value="org.apache.commons.compress@default:default"/>
