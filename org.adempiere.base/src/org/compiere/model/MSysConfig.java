@@ -143,6 +143,7 @@ public class MSysConfig extends X_AD_SysConfig
     public static final String PROJECT_ID_USER = "PROJECT_ID_USER";
     public static final String PROJECT_ID_WEBSITE = "PROJECT_ID_WEBSITE";
 	public static final String QUICKFORM_PAGE_SIZE = "QUICKFORM_PAGE_SIZE";
+    public static final String REACTIVATE_WH_ORDER_REVERSES_INVOICE = "REACTIVATE_WH_ORDER_REVERSES_INVOICE";
     public static final String REAL_TIME_POS = "REAL_TIME_POS";
     public static final String RecentItems_MaxSaved = "RecentItems_MaxSaved";
     public static final String RecentItems_MaxShown = "RecentItems_MaxShown";
