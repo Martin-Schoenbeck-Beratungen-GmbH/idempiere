@@ -35,7 +35,7 @@ import org.compiere.util.DB;
 import org.compiere.util.Env;
 
 /**
- *	Import implementation using {@link MImpFormat} and {@link MImpFormatRow}.
+ *	Import Format a Row
  *
  *  @author Jorg Janke
  *  @author Trifon Trifonov, Catura AG (www.catura.de)
@@ -79,6 +79,8 @@ public final class ImpFormat
 	private ArrayList<ImpFormatRow>	m_rows	= new ArrayList<ImpFormatRow>();
 	//
 	private String separatorChar;
+	/** An optional amount of lines to be skipped */
+	private int skip = 0;
 	
 	/**
 	 *	Set Name
@@ -101,10 +103,6 @@ public final class ImpFormat
 		return m_name;
 	}   //  getName
 	
-	/**
-	 * Set separator character for column
-	 * @param newChar
-	 */
 	public void setSeparatorChar(String newChar) {
 		if (newChar == null || newChar.length() == 0) {
 			throw new IllegalArgumentException("Separator Character must be 1 char");
@@ -112,16 +110,14 @@ public final class ImpFormat
 			separatorChar = newChar;
 		}
 	}
-	
-	/**
-	 * @return separator character for column
-	 */
 	public String getSeparatorChar() {
 		return separatorChar;
 	}
-	
+	public int getSkip() {
+		return this.skip;
+	}
 	/**
-	 *	Set Import Table
+	 *	Import Table
 	 *  @param AD_Table_ID table
 	 */
 	public void setTable (int AD_Table_ID)
@@ -173,7 +169,8 @@ public final class ImpFormat
 		}
 		else if (m_AD_Table_ID == I_I_BPartner.Table_ID)		//	I_BPartner
 		{
-			;
+			// gody: 20070113 to allow multiple contacts per BP			
+			// m_tableUnique1 = "Value";				//	the key
 		}
 		else if (m_AD_Table_ID == I_I_ElementValue.Table_ID)		//	I_ElementValue
 		{
@@ -240,7 +237,7 @@ public final class ImpFormat
 		return m_BPartner;
 	}   //  getVPartner
 
-	/**
+	/*************************************************************************
 	 *	Add Format Row
 	 *  @param row row
 	 */
@@ -250,9 +247,9 @@ public final class ImpFormat
 	}	//	addRow
 
 	/**
-	 *	Get Format Row
+	 *	Get Row
 	 *  @param index index
-	 *  @return Import Format Row or null (if index is not valid)
+	 *  @return Import Format Row
 	 */
 	public ImpFormatRow getRow (int index)
 	{
@@ -262,16 +259,16 @@ public final class ImpFormat
 	}	//	getRow
 
 	/**
-	 *	Get Format Row Count
-	 *  @return format row count
+	 *	Get Row Count
+	 *  @return row count
 	 */
 	public int getRowCount()
 	{
 		return m_rows.size();
 	}	//	getRowCount
 
-	/**
-	 *	Load import format
+	/*************************************************************************
+	 *	Factory load
 	 *  @param Id id
 	 *  @return Import Format
 	 */
@@ -293,6 +290,7 @@ public final class ImpFormat
 				if (X_AD_ImpFormat.FORMATTYPE_CustomSeparatorChar.equals(rs.getString(I_AD_ImpFormat.COLUMNNAME_FormatType))) {
 					retValue.setSeparatorChar(rs.getString(I_AD_ImpFormat.COLUMNNAME_SeparatorChar));
 				}
+				retValue.skip = Math.max(rs.getInt("lineskip"),0);
 			}
 		}
 		catch (SQLException e)
@@ -311,9 +309,9 @@ public final class ImpFormat
 	}	//	getFormat
 
 	/**
-	 *	Load Format Rows via import format id
+	 *	Load Format Rows with ID
 	 *  @param format format
-	 *  @param ID import format id
+	 *  @param ID id
 	 */
 	private static void loadRows (ImpFormat format, int ID)
 	{
@@ -354,8 +352,8 @@ public final class ImpFormat
 		}
 	}	//	loadLines
 
-	/**
-	 *	Parse line and returns list of values
+	/*************************************************************************
+	 *	Parse Line returns ArrayList of values
 	 *
 	 *  @param line line
 	 *  @param withLabel true if with label
@@ -453,15 +451,15 @@ public final class ImpFormat
 	}	//	parseLine
 
 	/**
-	 *  Parse flexible line format.<br/>
-	 *  A bit inefficient as it always starts from the start.
+	 *  Parse flexible line format.
+	 *  A bit inefficient as it always starts from the start
 	 *
 	 *  @param line the line to be parsed
 	 *  @param formatType Comma or Tab
 	 *  @param fieldNo number of field to be returned
 	 *  @return field in lime or ""
-	 *  @throws IllegalArgumentException if format unknowns
-	 */
+	@throws IllegalArgumentException if format unknowns
+	 *   */
 	private String parseFlexFormat (String line, String formatType, int fieldNo)
 	{
 		final char QUOTE = '"';
@@ -535,7 +533,7 @@ public final class ImpFormat
 		return "";
 	}   //  parseFlexFormat
 
-	/**
+	/*************************************************************************
 	 *	Insert/Update Database.
 	 *  @param ctx context
 	 *  @param line line
@@ -546,8 +544,7 @@ public final class ImpFormat
 	{
 		if (line == null || line.trim().length() == 0)
 		{
-			if (log.isLoggable(Level.FINEST))
-				log.finest("No Line");
+			log.finest("No Line");
 			return false;
 		}
 		String[] nodes = parseLine (line, true, false, true);	//	with label, no trace, ignore empty
@@ -556,6 +553,7 @@ public final class ImpFormat
 			if (log.isLoggable(Level.FINEST)) log.finest("Nothing parsed from: " + line);
 			return false;
 		}
+	//	log.config( "ImpFormat.updateDB - listSize=" + nodes.length);
 
 		//  Standard Fields
 		int AD_Client_ID = Env.getAD_Client_ID(ctx);
@@ -563,6 +561,7 @@ public final class ImpFormat
 		if (getAD_Table_ID() == X_I_GLJournal.Table_ID)
 			AD_Org_ID = 0;
 		int UpdatedBy = Env.getAD_User_ID(ctx);
+
 
 		//	Check if the record is already there ------------------------------
 		StringBuilder sql = new StringBuilder ("SELECT COUNT(*), MAX(")
@@ -656,8 +655,7 @@ public final class ImpFormat
 			if (log.isLoggable(Level.FINER)) log.finer("New ID=" + ID + " " + find);
 		}
 		else {
-			if (log.isLoggable(Level.WARNING))
-				log.warning("Not Inserted, Old ID=" + ID + " " + find);
+			log.warning("Not Inserted, Old ID=" + ID + " " + find);
 			return false;
 		}
 

@@ -557,8 +557,8 @@ public class WFileImport extends ADForm implements EventListener<Event>
 		else
 			m_record--;
 	
-		if (m_record < 0)
-			m_record = 0;
+		if (m_record < m_format.getSkip())
+			m_record = m_format.getSkip();
 		else if (m_record >= m_data.size())
 			m_record = m_data.size() - 1;
 		
@@ -599,7 +599,7 @@ public class WFileImport extends ADForm implements EventListener<Event>
 		int row = 0;
 		int imported = 0;
 		
-		for (row = 0; row < m_data.size(); row++)
+		for (row = m_format.getSkip(); row < m_data.size(); row++)
 			if (m_format.updateDB(Env.getCtx(), m_data.get(row).toString(), null))
 				imported++;
 		
