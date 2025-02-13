@@ -19,16 +19,11 @@ package org.compiere.process;
 import java.io.File;
 import java.io.Serializable;
 import java.math.BigDecimal;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.logging.Level;
 
 import org.adempiere.util.IProcessUI;
 import org.compiere.model.MPInstance;
@@ -41,7 +36,6 @@ import org.compiere.model.PO;
 import org.compiere.model.Query;
 import org.compiere.model.X_AD_PInstance_Log;
 import org.compiere.util.CLogger;
-import org.compiere.util.DB;
 import org.compiere.util.DisplayType;
 import org.compiere.util.Env;
 import org.compiere.util.Ini;
@@ -96,8 +90,6 @@ public class ProcessInfo implements Serializable
 			m_printPreview = true;
 		else
 			m_printPreview = false;
-        
-        setDefaultParameters();
 	}   //  ProcessInfo
 
 	/** Process UUID			*/
