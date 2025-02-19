@@ -151,8 +151,7 @@ public class ProcessInfo implements Serializable
 
 	/**	Log Info					*/
 	private ProcessInfoParameter[]	m_parameter = null;
-    private ProcessInfoParameter[]	m_defaultParameters = null;
-	
+    
 	/** Transaction Name 			*/
 	private String				m_transactionName = null;
 	

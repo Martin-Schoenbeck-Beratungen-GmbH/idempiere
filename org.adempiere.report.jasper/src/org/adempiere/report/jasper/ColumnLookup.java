@@ -27,8 +27,6 @@ package org.adempiere.report.jasper;
 import java.math.BigDecimal;
 import java.util.Date;
 import java.util.function.BiFunction;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.compiere.model.MAccount;
 import org.compiere.model.MAttachment;

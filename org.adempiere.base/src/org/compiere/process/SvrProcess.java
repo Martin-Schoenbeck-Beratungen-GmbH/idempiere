@@ -587,7 +587,6 @@ public abstract class SvrProcess implements ProcessCall
 			ProcessInfoUtil.setParameterFromDB(m_pi);
 			retValue = m_pi.getParameter();
 		}
-		
 		return retValue;
 	}	//	getParameter
 
