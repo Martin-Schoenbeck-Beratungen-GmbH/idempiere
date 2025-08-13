@@ -55,6 +55,7 @@ import javax.xml.transform.stream.StreamResult;
 import org.adempiere.base.event.EventManager;
 import org.adempiere.base.event.IEventTopics;
 import org.adempiere.exceptions.AdempiereException;
+import org.adempiere.exceptions.CrossTenantException;
 import org.adempiere.exceptions.DBException;
 import org.adempiere.process.UUIDGenerator;
 import org.compiere.Adempiere;
@@ -117,7 +118,7 @@ public abstract class PO
     /**
 	 * 
 	 */
-	private static final long serialVersionUID = 1335945052825334098L;
+	private static final long serialVersionUID = -10414475210373531L;
 
 	/** String key to create a new record based in UUID constructor */
 	public static final String UUID_NEW_RECORD = "";
@@ -1715,7 +1716,12 @@ public abstract class PO
 			if (p_info.isVirtualColumn(index)) {
 				if (log.isLoggable(Level.FINER))log.log(Level.FINER, "Virtual Column not loaded: " + columnName);
 			} else {
-				log.log(Level.SEVERE, "(rs) - " + String.valueOf(index)
+				Level logLevel;
+				if (DBException.isColumnNotFound(e))
+					logLevel = Level.WARNING;
+				else
+					logLevel = Level.SEVERE;
+				log.log(logLevel, "(rs) - " + String.valueOf(index)
 					+ ": " + p_info.getTableName() + "." + p_info.getColumnName(index)
 					+ " (" + p_info.getColumnClass(index) + ") - " + e);
 				success = false;
@@ -2208,8 +2214,10 @@ public abstract class PO
 		set_ValueNoCheck ("UpdatedBy", Integer.valueOf(AD_User_ID));
 	}	//	setAD_User_ID
 
+	private static final String TRANSLATION_CACHE_TABLE_NAME = "PO_Trl";
+	
 	/**	Cache						*/
-	private static CCache<String,String> trl_cache	= new CCache<String,String>("PO_Trl", 5);
+	private static CCache<String,String> trl_cache	= new CCache<String,String>(TRANSLATION_CACHE_TABLE_NAME, 5, CCache.DEFAULT_EXPIRE_MINUTE, false);
 	/** Cache for foreign keys */
 	private static CCache<Integer,List<ValueNamePair>> fks_cache	= new CCache<Integer,List<ValueNamePair>>("FKs", 5);
 
@@ -2290,9 +2298,13 @@ public abstract class PO
 	 * @return key used in the translation cache
 	 */
 	private String getTrlCacheKey(String columnName, String AD_Language) {
-		return get_TableName() + "." + columnName + "|" + get_ID() + "|" + AD_Language;
+		return toTrlCacheKey(get_TableName(), columnName, get_ID(), AD_Language);
 	}
 
+	private static String toTrlCacheKey(String tableName, String columnName, int id, String AD_Language) {
+		return tableName + "." + columnName + "|" + id + "|" + AD_Language;
+	}
+	
 	/**
 	 * Get Translation of column
 	 * @param columnName
@@ -2732,6 +2744,9 @@ public abstract class PO
 				success = false;
 			}
 		}
+		
+		//collect changed columns for translation cache reset below
+		List<String> updatedColumns = new ArrayList<>();
 		//	OK
 		if (success)
 		{
@@ -2757,6 +2772,8 @@ public abstract class PO
 			int size = p_info.getColumnCount();
 			for (int i = 0; i < size; i++)
 			{
+				if (is_ValueChanged(i))
+					updatedColumns.add(p_info.getColumnName(i));
 				if (m_newValues[i] != null)
 				{
 					if (m_newValues[i] == Null.NULL)
@@ -2768,9 +2785,9 @@ public abstract class PO
 			m_newValues = new Object[size];
 			m_createNew = false;
 		}
-		if (!newRecord)
+		if (!newRecord && success)
 			MRecentItem.clearLabel(p_info.getAD_Table_ID(), get_ID(), get_UUID());
-		if (CacheMgt.get().hasCache(p_info.getTableName())) {
+		if (success && CacheMgt.get().hasCache(p_info.getTableName())) {
 			boolean cacheResetScheduled = false;
 			if (get_TrxName() != null) {
 				Trx trx = Trx.get(get_TrxName(), false);
@@ -2801,6 +2818,56 @@ public abstract class PO
 					Adempiere.getThreadPoolExecutor().submit(() -> CacheMgt.get().reset(p_info.getTableName(), get_ID()));
 				else if (get_ID() > 0)
 					Adempiere.getThreadPoolExecutor().submit(() -> CacheMgt.get().newRecord(p_info.getTableName(), get_ID()));
+			}
+		} else if (success && p_info.getTableName().endsWith("_Trl") && CacheMgt.get().hasCache(TRANSLATION_CACHE_TABLE_NAME) && !newRecord) {
+			MTable table = MTable.get(getCtx(), p_info.getTableName().substring(0, p_info.getTableName().length() - 4));
+			POInfo parentInfo = POInfo.getPOInfo(getCtx(), table.getAD_Table_ID());
+			List<String> translatedColumns = new ArrayList<>();
+			for (int i = 0; i < parentInfo.getColumnCount(); i++)
+			{
+				String columnName = parentInfo.getColumnName(i);
+				if (parentInfo.isColumnTranslated(i) && updatedColumns.contains(columnName))
+				{
+					translatedColumns.add(columnName);
+				}
+			}
+			if (translatedColumns.size() > 0) {
+				int id = get_ValueAsInt(table.getKeyColumns()[0]);
+				boolean cacheResetScheduled = false;
+				if (get_TrxName() != null) {
+					Trx trx = Trx.get(get_TrxName(), false);
+					if (trx != null) {
+						trx.addTrxEventListener(new TrxEventListener() {
+							@Override
+							public void afterRollback(Trx trx, boolean success) {
+								trx.removeTrxEventListener(this);
+							}
+							@Override
+							public void afterCommit(Trx sav, boolean success) {
+								if (success)
+									Adempiere.getThreadPoolExecutor().submit(() -> { 
+										for (String column : translatedColumns) {
+											CacheMgt.get().reset(TRANSLATION_CACHE_TABLE_NAME, 
+												toTrlCacheKey(table.getTableName(), column, id, get_ValueAsString("AD_Language")));
+										}
+									});
+								trx.removeTrxEventListener(this);
+							}
+							@Override
+							public void afterClose(Trx trx) {
+							}
+						});
+						cacheResetScheduled = true;
+					}
+				}
+				if (!cacheResetScheduled) {
+					Adempiere.getThreadPoolExecutor().submit(() -> {
+						for (String column : translatedColumns) {
+							CacheMgt.get().reset(TRANSLATION_CACHE_TABLE_NAME, 
+								toTrlCacheKey(table.getTableName(), column, id, get_ValueAsString("AD_Language")));
+						}
+					});
+				}
 			}
 		}
 		
@@ -4686,7 +4753,7 @@ public abstract class PO
 		        for (String langName : availableLanguages) {
 		    		Language language = Language.getLanguage(langName);
 					String key = getTrlCacheKey(columnName, language.getAD_Language());
-					trl_cache.remove(key);
+					CacheMgt.get().reset(TRANSLATION_CACHE_TABLE_NAME, key);
 				}
 			}
 		}
@@ -6002,30 +6069,31 @@ public abstract class PO
 					+" PO.AD_Client_ID="+poClientID
 					+" writing="+writing
 					+" Session="+Env.getContext(getCtx(), Env.AD_SESSION_ID));
-				String message = "Cross tenant PO " + (writing ? "writing" : "reading") + " request detected from session " 
-						+ Env.getContext(getCtx(), Env.AD_SESSION_ID) + " for table " + get_TableName()
-						+ " Record_ID=" + get_ID();
-				throw new AdempiereException(message);
+				throw new CrossTenantException(writing, get_TableName(), get_ID());
 			}
 		}
 	}
-
+	
 	/**
-	 * Validate Foreign keys for cross tenant.</br>
+	 * Validates foreign key constraints for the current record.<br/>
 	 * To be called programmatically before saving in programs that can receive arbitrary values in IDs.<br/>
 	 * This is an expensive operation in terms of database, use it wisely.
-	 * <pre>
-	 * TODO: there is huge room for performance improvement, for example:
-	 * - caching the valid values found on foreign tables
-	 * - caching the column ID of the foreign column
-	 * - caching the systemAccess
-	 * </pre>
-	 * @return true if all the foreign keys are valid
+	 * <p>
+	 * This method ensures that:
+	 * <ul>
+	 *   <li>Foreign key values exist in the referenced table.</li>
+	 *   <li>System-level records are only used where allowed.</li>
+	 *   <li>Cross-tenant references are prevented.</li>
+	 * </ul>
+	 * If any validation fails, an appropriate exception is thrown.
+	 *
+	 * @throws AdempiereException   If the foreign key value does not exist in the referenced table.
+	 * @throws CrossTenantException If a cross-tenant reference is detected.
 	 */
-	public boolean validForeignKeys() {
+	public void validForeignKeysEx() {
 		List<ValueNamePair> fks = getForeignColumnIdxs();
 		if (fks == null) {
-			return true;
+			return;
 		}
 		for (ValueNamePair vnp : fks) {
 			String fkcol = vnp.getID();
@@ -6056,20 +6124,47 @@ public abstract class PO
 							.append("=?");
 					int pocid = DB.getSQLValue(get_TrxName(), sql.toString(), fkval);
 					if (pocid < 0) {
-						log.saveError("Error", "Foreign ID " + fkval + " not found in " + fkcol);
-						return false;
+						throw new AdempiereException("Foreign ID " + fkval + " not found in " + fkcol);
 					}
 					if (pocid == 0 && !systemAccess) {
-						log.saveError("Error", "System ID " + fkval + " cannot be used in " + fkcol);
-						return false;
+						throw new CrossTenantException(fkval, fkcol);
 					}
 					int curcid = Env.getAD_Client_ID(getCtx());
 					if (pocid > 0 && pocid != curcid) {
-						log.saveError("Error", "Cross tenant ID " + fkval + " not allowed in " + fkcol);
-						return false;
+						throw new CrossTenantException(fkval, fkcol);
 					}
 				}
 			}
+		}
+	}
+
+	/**
+	 * Validates foreign key constraints for the current record.
+	 * <p>
+	 * This method calls {@link #validForeignKeysEx()} and returns a boolean result instead of throwing exceptions.
+	 * It ensures that:
+	 * <ul>
+	 *   <li>Foreign key values exist in the referenced table.</li>
+	 *   <li>System-level records are only used where allowed.</li>
+	 *   <li>Cross-tenant references are prevented.</li>
+	 * </ul>
+	 * If validation fails, the method returns {@code false} instead of throwing an exception.
+	 * 
+ 	 * <pre>
+	 * TODO: there is huge room for performance improvement, for example:
+	 * - caching the valid values found on foreign tables
+	 * - caching the column ID of the foreign column
+	 * - caching the systemAccess
+	 * </pre>
+	 *
+	 * @return {@code true} if all foreign key constraints are valid, {@code false} otherwise.
+	 */
+	public boolean validForeignKeys() {
+		try {
+			validForeignKeysEx();
+		} catch (Exception e) {
+			log.saveError("Error", e.getMessage());
+			return false;
 		}
 		return true;
 	}
@@ -6121,10 +6216,10 @@ public abstract class PO
 		if (pocid < 0)
 			throw new AdempiereException("Foreign ID " + recordId + " not found in " + ft.getTableName());
 		if (pocid == 0 && !systemAccess)
-			throw new AdempiereException("System ID " + recordId + " cannot be used in " + ft.getTableName());
+			throw new CrossTenantException(ft.getTableName(), recordId);
 		int curcid = getAD_Client_ID();
 		if (pocid > 0 && pocid != curcid)
-			throw new AdempiereException("Cross tenant ID " + recordId + " not allowed in " + ft.getTableName());
+			throw new CrossTenantException(ft.getTableName(), recordId);
 	}
 
 	/**
@@ -6174,10 +6269,10 @@ public abstract class PO
 		if (pocid < 0)
 			throw new AdempiereException("Foreign UUID " + recordUU + " not found in " + ft.getTableName());
 		if (pocid == 0 && !systemAccess)
-			throw new AdempiereException("System UUID " + recordUU + " cannot be used in " + ft.getTableName());
+			throw new CrossTenantException(ft.getTableName(), recordUU);
 		int curcid = getAD_Client_ID();
 		if (pocid > 0 && pocid != curcid)
-			throw new AdempiereException("Cross tenant UUID " + recordUU + " not allowed in " + ft.getTableName());
+			throw new CrossTenantException(ft.getTableName(), recordUU);
 	}
 
 	/**
