@@ -33,7 +33,6 @@ import java.util.Properties;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.adempiere.base.annotation.Parameter;
 import org.adempiere.base.event.EventManager;
@@ -588,12 +587,7 @@ public abstract class SvrProcess implements ProcessCall
 			ProcessInfoUtil.setParameterFromDB(m_pi);
 			retValue = m_pi.getParameter();
 		}
-		
 		return retValue;
-//		return Stream.concat(
-//				Arrays.stream(m_pi.getDefaultParameters()), 
-//				Arrays.stream(retValue)
-//				).toArray(ProcessInfoParameter[]::new);
 	}	//	getParameter
 
 	/**
