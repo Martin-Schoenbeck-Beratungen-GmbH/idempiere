@@ -19,6 +19,7 @@ import java.io.FileNotFoundException;
 import java.util.Properties;
 import java.util.Vector;
 import java.util.logging.Level;
+import java.util.stream.IntStream;
 
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.webui.ClientInfo;
@@ -45,6 +46,7 @@ import org.adempiere.webui.event.DialogEvents;
 import org.adempiere.webui.factory.ButtonFactory;
 import org.adempiere.webui.theme.ThemeManager;
 import org.adempiere.webui.util.FeedbackManager;
+import org.adempiere.webui.util.Icon;
 import org.adempiere.webui.util.Statistic;
 import org.adempiere.webui.util.ZKUpdateUtil;
 import org.compiere.Adempiere;
@@ -70,14 +72,14 @@ import org.zkoss.zul.Borderlayout;
 import org.zkoss.zul.Center;
 import org.zkoss.zul.Div;
 import org.zkoss.zul.Filedownload;
-import org.zkoss.zul.Hbox;
+import org.adempiere.webui.component.FlexHlayout;
 import org.zkoss.zul.Iframe;
 import org.zkoss.zul.Image;
 import org.zkoss.zul.Listitem;
 import org.zkoss.zul.Separator;
 import org.zkoss.zul.South;
 import org.zkoss.zul.Space;
-import org.zkoss.zul.Vbox;
+import org.adempiere.webui.component.FlexVlayout;
 
 /**
  * About dialog for iDempiere
@@ -225,15 +227,15 @@ public class AboutWindow extends Window implements EventListener<Event> {
 	 */
 	protected Tabpanel createTrace() {
 		Tabpanel tabPanel = new Tabpanel();
-		Vbox vbox = new Vbox();
+		FlexVlayout vbox = new FlexVlayout();
 		LayoutUtils.addSclass("about-trace-panel", vbox);
 		vbox.setParent(tabPanel);
 		ZKUpdateUtil.setHflex(vbox, "1");
 		ZKUpdateUtil.setVflex(vbox, "1");
 		
-		Hbox hbox = new Hbox();
-		hbox.setAlign("center");
-		hbox.setPack("start");
+		FlexHlayout hbox = new FlexHlayout();
+		hbox.setAlign(FlexHlayout.AlignType.CENTER);
+		hbox.setPack(FlexHlayout.PackType.START);
 		Label levelLabel = new Label("Trace Level:");
 		ZKUpdateUtil.setHeight(levelLabel, "100%");
 		hbox.appendChild(levelLabel);
@@ -275,9 +277,9 @@ public class AboutWindow extends Window implements EventListener<Event> {
 				ZKUpdateUtil.setHflex(hbox, "1");
 				ZKUpdateUtil.setVflex(hbox, "0");
 				vbox.appendChild(hbox);
-				hbox = new Hbox();
-				hbox.setAlign("center");
-				hbox.setPack("start");
+				hbox = new FlexHlayout();
+				hbox.setAlign(FlexHlayout.AlignType.CENTER);
+				hbox.setPack(FlexHlayout.PackType.START);
 
 				btnReloadLogProps = new Button("Reload Log Props");
 				btnReloadLogProps.setTooltiptext("Reload the configuration of log levels from idempiere.properties file");
@@ -298,9 +300,9 @@ public class AboutWindow extends Window implements EventListener<Event> {
 		ZKUpdateUtil.setVflex(hbox, "0");
 		vbox.appendChild(hbox);
 
-		hbox = new Hbox();
-		hbox.setAlign("center");
-		hbox.setPack("start");
+		hbox = new FlexHlayout();
+		hbox.setAlign(FlexHlayout.AlignType.CENTER);
+		hbox.setPack(FlexHlayout.PackType.START);
 		bErrorsOnly = new Checkbox();
 		bErrorsOnly.setLabel(Msg.getMsg(Env.getCtx(), "ErrorsOnly"));
 		//default only show error
@@ -309,19 +311,19 @@ public class AboutWindow extends Window implements EventListener<Event> {
 		hbox.appendChild(bErrorsOnly);
 		hbox.appendChild(new Space());
         btnDownload = new Button(Msg.getMsg(Env.getCtx(), "SaveFile"));
-		btnDownload.setIconSclass("z-icon-Save");	
+		btnDownload.setIconSclass(Icon.getIconSclass(Icon.SAVE));	
 		btnDownload .setTooltiptext("Download session log");
 		LayoutUtils.addSclass("txt-btn", btnDownload);
 		btnDownload.addEventListener(Events.ON_CLICK, this);
 		hbox.appendChild(btnDownload);
         btnErrorEmail = new Button(Msg.getMsg(Env.getCtx(), "SendEMail"));
-		btnErrorEmail.setIconSclass("z-icon-SendMail");
+		btnErrorEmail.setIconSclass(Icon.getIconSclass(Icon.SEND_MAIL));
 		btnErrorEmail.setTooltiptext("Email session log");
 		LayoutUtils.addSclass("txt-btn", btnErrorEmail);
 		btnErrorEmail.addEventListener(Events.ON_CLICK, this);
 		hbox.appendChild(btnErrorEmail);
         btnViewLog = new Button(Util.cleanAmp(Msg.getMsg(Env.getCtx(), "View")));
-		btnViewLog.setIconSclass("z-icon-File");
+		btnViewLog.setIconSclass(Icon.getIconSclass(Icon.FILE));
 		btnViewLog.setTooltiptext("View session log");
 		LayoutUtils.addSclass("txt-btn", btnViewLog);
 		btnViewLog.addEventListener(Events.ON_CLICK, this);
@@ -427,27 +429,27 @@ public class AboutWindow extends Window implements EventListener<Event> {
 	protected Tabpanel createAbout() {
 		Tabpanel tabPanel = new Tabpanel();
 
-		Vbox vb = new Vbox();
+		FlexVlayout vb = new FlexVlayout();
 		LayoutUtils.addSclass("about-main-panel", vb);
 		ZKUpdateUtil.setWidth(vb, "100%");
 		ZKUpdateUtil.setHeight(vb, "100%");
-		vb.setAlign("center");
-		vb.setPack("center");
+		vb.setAlign(FlexVlayout.AlignType.CENTER);
+		vb.setPack(FlexVlayout.PackType.CENTER);
 		vb.setParent(tabPanel);
 
-		Vbox vbox = new Vbox();
+		FlexVlayout vbox = new FlexVlayout();
 		LayoutUtils.addSclass("about-main-panel-logo", vbox);
 		ZKUpdateUtil.setWidth(vbox, "100%");
-		vbox.setAlign("center");
+		vbox.setAlign(FlexVlayout.AlignType.CENTER);
 		vbox.setParent(vb);
 		
 		Image image = new Image(ThemeManager.getLargeLogo());
 		image.setParent(vbox);
 
-		vbox = new Vbox();
+		vbox = new FlexVlayout();
 		LayoutUtils.addSclass("about-main-panel-version", vbox);
 		ZKUpdateUtil.setWidth(vbox, "100%");
-		vbox.setAlign("center");
+		vbox.setAlign(FlexVlayout.AlignType.CENTER);
 		vbox.setParent(vb);
 		
 		Text text = new Text(Adempiere.getSubtitle());
@@ -457,10 +459,10 @@ public class AboutWindow extends Window implements EventListener<Event> {
 		text = new Text(Adempiere.getVersion());
 		text.setParent(vbox);
 		
-		vbox = new Vbox();
+		vbox = new FlexVlayout();
 		LayoutUtils.addSclass("about-main-panel-links", vbox);
-		ZKUpdateUtil.setWidth(vb, "100%");
-		vbox.setAlign("center");
+		ZKUpdateUtil.setWidth(vbox, "100%");
+		vbox.setAlign(FlexVlayout.AlignType.CENTER);
 		vbox.setParent(vb);
 		
 		separator = new Separator();
@@ -527,18 +529,11 @@ public class AboutWindow extends Window implements EventListener<Event> {
 	private void reloadLogProps() {
 		Properties props = new Properties();
 		String propertyFileName = Ini.getFileName(false);
-		FileInputStream fis = null;
-		try {
-			fis = new FileInputStream(propertyFileName);
+		try (FileInputStream fis = new FileInputStream(propertyFileName)){
+			
 			props.load(fis);
 		} catch (Exception e) {
 			throw new AdempiereException("Could not load properties file, cause: " + e.getLocalizedMessage());
-		} finally {
-			if (fis != null) {
-				try {
-					fis.close();
-				} catch (Exception e) {}
-			}
 		}
 		String globalLevel = props.getProperty(Ini.P_TRACELEVEL);
 		if (! Util.isEmpty(globalLevel)) {
@@ -546,26 +541,22 @@ public class AboutWindow extends Window implements EventListener<Event> {
 			if (! Util.isEmpty(globalLevel)) {
 				CLogMgt.setLevel(globalLevel);
 				Level level = CLogMgt.getLevel();
-				for (int i = 0; i < CLogMgt.LEVELS.length; i++) {
-					if (CLogMgt.LEVELS[i].intValue() == level.intValue()) {
-						levelListBox.setSelectedIndex(i);
-						break;
-					}
-				}
+				IntStream.range(0, CLogMgt.LEVELS.length)
+				         .filter(i -> CLogMgt.LEVELS[i].intValue() == level.intValue())
+				         .findFirst()
+				         .ifPresent(levelListBox::setSelectedIndex);
 			}
 		}
 		for(Object key : props.keySet()) {
 			if (key instanceof String) {
 				String s = (String)key;
+				/* Special properties to set log level for specific packages, not encrypted, for example:
+				 * org.eclipse.jetty.ee8.annotations.AnnotationParser.TraceLevel=SEVERE
+				 */
 				if (s.endsWith("."+Ini.P_TRACELEVEL)) {
 					String level = props.getProperty(s);
-					if (! Util.isEmpty(level)) {
-						level = SecureEngine.decrypt(level, 0);
-						if (! Util.isEmpty(level)) {
-							s = s.substring(0, s.length() - ("."+Ini.P_TRACELEVEL).length());
-							CLogMgt.setLevel(s, level);
-						}
-					}
+					s = s.substring(0, s.length() - ("."+Ini.P_TRACELEVEL).length());
+					CLogMgt.setLevel(s, level);
 				}
 			}
 		}

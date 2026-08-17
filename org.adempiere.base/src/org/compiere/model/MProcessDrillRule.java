@@ -239,7 +239,6 @@ public class MProcessDrillRule extends X_AD_Process_DrillRule implements Immutab
 	}
 	
 	/**
-	 * Are all mandatory parameters defined among the Drill Rule Parameters
 	 * @return true - all mandatory parameters are set; false - at least one mandatory parameter is not set
 	 */
 	private boolean allMandatoryParaSet() {

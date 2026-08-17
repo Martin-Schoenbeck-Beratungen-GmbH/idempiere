@@ -1,21 +1,21 @@
 .login-window {
-	background-color: #c7e8ff;
+	background-color: var(--zk-login-window-background-color);
 }
 
 .login-window .z-window-content {
-	background-color: #c7e8ff;
+	background-color: var(--zk-login-window-background-color);
 }
 
 .login-box-body {
 	width: 720px;
-	background-color: white;
+	background-color: var(--zk-login-box-background-color);
 	padding: 0px 5px 0px 0px;
 	margin: 0;
 	text-align: center;
 }
 
 .login-box-header {
-	background-color: white;
+	background-color: var(--zk-login-box-background-color);
 	width: 720px;
 	border-radius: 10px 10px 0px 0px;
 	padding-left: 30px;
@@ -30,7 +30,7 @@
 	display: inline-block;
 	text-align: left;
 	padding: 10px;
-	color: #484848 !important;
+	color: var(--zk-login-header-text-color) !important;
 	width: 100%;	
 	font-size: 1.6em !important;
 }
@@ -42,7 +42,7 @@
 .login-box-footer {
 	height: 130px;
 	width: 720px;
-	background-color: white;
+	background-color: var(--zk-login-box-background-color);
 	border-radius: 0px 0px 10px 10px;
 	padding-left: 30px;
   	padding-right: 30px;
@@ -61,7 +61,7 @@
 }
 
 .login-label {
-	color: black;
+	color: var(--zk-login-label-color);
 	text-align: right;
 	width: 40%;
 	padding: 2px !important;
@@ -83,10 +83,44 @@
 
 .login-east-panel, .login-west-panel {
 	width: 380px;
-	background-color: #ffffff; 
+	background-color: var(--zk-login-side-panel-background-color); 
 	position: relative;
 	border: none;
 }
+
+/* SSO buttons */
+.sso-login-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 65% !important;
+    max-width: 300px;
+    border-radius: 20px !important;
+    overflow: hidden;
+    padding: 8px 15px !important;
+}
+
+.sso-login-btn img {
+    position: absolute;
+    left: 15px;
+    height: 24px;
+    margin-right: 0;
+}
+
+.sso-login-btn.icon-only img {
+    margin: 0 !important;
+    height: 24px;
+}
+
+@media (max-width: 600px) {
+    .sso-login-btn {
+        width: 95% !important;
+        overflow: hidden;
+    	text-overflow: ellipsis;
+    }
+}
+
 @media screen and (max-width: 659px) {
 	.login-box-body, .login-box-header, .login-box-footer {
 		background-image: none;
@@ -132,4 +166,11 @@
 	.login-window .z-center > .z-center-body .z-window.z-window-embedded > .z-window-content {
 		padding: 5px
 	}
+}
+
+/* Password reset (IDEMPIERE-7060) */
+.password-reset-message {
+	display: block;
+	text-align: center;
+	margin: 4px 0;
 }

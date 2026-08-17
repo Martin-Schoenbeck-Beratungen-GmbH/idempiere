@@ -36,6 +36,7 @@ import org.compiere.model.MAcctSchema;
 import org.compiere.model.MCostDetail;
 import org.compiere.model.MInOut;
 import org.compiere.model.MInvoice;
+import org.compiere.model.MInvoiceLine;
 import org.compiere.model.MMatchInv;
 import org.compiere.model.MMatchPO;
 import org.compiere.model.MTable;
@@ -535,6 +536,8 @@ public class DocManager {
 			return null;
 		
 		// get the cost detail records of the back-date transaction
+		// invoice's account date might not be the same as the cost detail's account date, 
+		// it depends on the matched invoice's account date
 		Timestamp dateAcct = MCostDetail.getDateAcct(AD_Table_ID, Record_ID, trxName);
 		if (dateAcct == null)
 			return null;
@@ -618,14 +621,14 @@ public class DocManager {
 		
 		StringBuilder conditionClause = new StringBuilder();
 		if (table.getAD_Table_ID() == MMatchPO.Table_ID)
-			conditionClause.append("C_OrderLine_ID IN (SELECT C_OrderLine_ID FROM M_MatchPO WHERE M_MatchPO_ID=?)");
+			conditionClause.append("(C_OrderLine_ID, M_AttributeSetInstance_ID) IN (SELECT C_OrderLine_ID, M_AttributeSetInstance_ID FROM M_MatchPO WHERE M_MatchPO_ID=?)");
 		else if (table.getAD_Table_ID() == MInOut.Table_ID) {
 			conditionClause.append("(M_InOutLine_ID IN (SELECT M_InOutLine_ID FROM M_InOutLine WHERE M_InOut_ID=?)) OR ");
-			conditionClause.append("(C_OrderLine_ID IN (SELECT C_OrderLine_ID FROM M_MatchPO WHERE M_InOutLine_ID IN (")
+			conditionClause.append("((C_OrderLine_ID, M_AttributeSetInstance_ID) IN (SELECT C_OrderLine_ID, M_AttributeSetInstance_ID FROM M_MatchPO WHERE M_InOutLine_ID IN (")
 				.append("SELECT M_InOutLine_ID FROM M_InOutLine WHERE M_InOut_ID=").append(Record_ID).append(")))");
 		} else if (table.getAD_Table_ID() == MMatchInv.Table_ID) {
 			conditionClause.append("(M_MatchInv_ID=?) OR ");
-			conditionClause.append("(C_InvoiceLine_ID IN (SELECT C_InvoiceLine_ID FROM M_MatchInv WHERE M_MatchInv_ID=").append(Record_ID).append("))");
+			conditionClause.append("((C_InvoiceLine_ID, M_AttributeSetInstance_ID) IN (SELECT C_InvoiceLine_ID, M_AttributeSetInstance_ID FROM M_MatchInv WHERE M_MatchInv_ID=").append(Record_ID).append("))");
 		} else {
 			MTable childTable = MTable.get(Env.getCtx(), table.getTableName() + "Line");
 			if (childTable != null) {
@@ -659,7 +662,10 @@ public class DocManager {
 		Timestamp today = TimeUtil.trunc(new Timestamp(System.currentTimeMillis()), TimeUtil.TRUNC_DAY);
 		for (int x = bdcds.size() - 1; x >= 0; x--) {
 			MCostDetail bdcd = bdcds.get(x);
-			Timestamp allowedBackDate = TimeUtil.addDays(today, - bdcd.getC_AcctSchema().getBackDateDay());
+			MAcctSchema as = new MAcctSchema(Env.getCtx(), bdcd.getC_AcctSchema_ID(), trxName);
+			Timestamp allowedBackDate = TimeUtil.addDays(today, - as.getBackDateDay());
+			// Do not skip when MAcctSchema.getBackDateDay() == 0, as some documents with the current account date 
+			// still require reposting (e.g. MR reversal and related MatchPOs)
 			if (bdcd.getDateAcct().before(allowedBackDate))
 				bdcds.remove(x);
 		}
@@ -752,13 +758,16 @@ public class DocManager {
 		
 		// re-post all the documents after the back-date transaction
 		List<String> repostedRecordIds = new ArrayList<String>();
+		// NOTE: Do not skip repost the back-date transaction
+		// All the cost detail records after the back-date transaction were set to unprocessed
+    	// If skip repost the back-date transaction, some records might remains unprocessed
 		
 		StringBuilder selectSql = new StringBuilder();
 		selectSql.append("SELECT mpo.M_MatchPO_ID, il.C_Invoice_ID, iol.M_InOut_ID, mi.M_MatchInv_ID, invl.M_Inventory_ID, ");
 		selectSql.append("ml.M_Movement_ID, pl.M_Production_ID, pi.C_ProjectIssue_ID, cd.M_CostDetail_ID, cd.IsBackDate ");
 		selectSql.append("FROM M_CostDetail cd ");
 		selectSql.append("LEFT JOIN M_CostDetail refcd ON (refcd.M_CostDetail_ID=cd.Ref_CostDetail_ID) ");
-		selectSql.append("LEFT JOIN M_MatchPO mpo ON (mpo.C_OrderLine_ID = cd.C_OrderLine_ID) ");
+		selectSql.append("LEFT JOIN M_MatchPO mpo ON (mpo.C_OrderLine_ID = cd.C_OrderLine_ID AND mpo.DateAcct = cd.DateAcct AND mpo.M_AttributeSetInstance_ID=cd.M_AttributeSetInstance_ID) ");
 		selectSql.append("LEFT JOIN C_InvoiceLine il ON (il.C_InvoiceLine_ID = cd.C_InvoiceLine_ID) ");
 		selectSql.append("LEFT JOIN M_InOutLine iol ON (iol.M_InOutLine_ID = cd.M_InOutLine_ID) ");
 		selectSql.append("LEFT JOIN M_MatchInv mi ON (mi.M_MatchInv_ID = cd.M_MatchInv_ID) ");
@@ -780,6 +789,13 @@ public class DocManager {
 		selectSql.append("ORDER BY cd.DateAcct, ");
 		selectSql.append("CASE WHEN COALESCE(refcd.DateAcct,cd.DateAcct) = cd.DateAcct THEN COALESCE(cd.Ref_CostDetail_ID,cd.M_CostDetail_ID) ELSE cd.M_CostDetail_ID END, ");
 		selectSql.append("cd.M_CostDetail_ID ");
+		
+		int backDateMatchInvInvoiceId = 0;
+		if (AD_Table_ID == MMatchInv.Table_ID) {
+			MMatchInv backDateMatchInv = new MMatchInv(Env.getCtx(), Record_ID, trxName);
+			MInvoiceLine backDateInvoiceLine = new MInvoiceLine(Env.getCtx(), backDateMatchInv.getC_InvoiceLine_ID(), trxName);
+			backDateMatchInvInvoiceId = backDateInvoiceLine.getC_Invoice_ID();
+		}
 		
 		PreparedStatement pstmt = null;
     	ResultSet rs = null;
@@ -818,26 +834,41 @@ public class DocManager {
 				if (repostedRecordIds.contains(repostedRecordId))
 					continue;
 				repostedRecordIds.add(repostedRecordId);
+				
+				boolean skipPosting = false;
+				if (tableID == MInvoice.Table_ID) {
+					MInvoice i = new MInvoice(Env.getCtx(), recordID, trxName);
+					if (!i.isSOTrx())
+						if (i.getDateAcct().compareTo(cd.getDateAcct()) < 0)
+							skipPosting = true;
+				}
 
 				if (tableID == MMatchInv.Table_ID) {
 					MMatchInv mi = new MMatchInv(Env.getCtx(), recordID, trxName);
-					if (repostedRecordId.contains(MInvoice.Table_ID + "_" + mi.getC_InvoiceLine().getC_Invoice_ID()))
+					MInvoiceLine il = new MInvoiceLine(Env.getCtx(), mi.getC_InvoiceLine_ID(), trxName);	
+					if (repostedRecordIds.contains(MInvoice.Table_ID + "_" + il.getC_Invoice_ID()))
 						continue;
 				}
 				
-				String error = DocManager.postDocument(ass, tableID, recordID, true, true, true, trxName);
-				if (error != null)
-					return error;
+				if (!skipPosting) {
+					String error = DocManager.postDocument(ass, tableID, recordID, true, true, true, trxName);
+					if (error != null)
+						return error;
+				}
 								
 				if (tableID == MInvoice.Table_ID) { 
 					MMatchPO mpo = null;
 					if (AD_Table_ID == MMatchPO.Table_ID)
 						mpo = new MMatchPO(Env.getCtx(), Record_ID, trxName);
 					MMatchInv[] miList = MMatchInv.getInvoiceByDateAcct(Env.getCtx(), recordID, cd.getDateAcct(), trxName);
+					boolean isBeforeBackDateMatchInv = recordID == backDateMatchInvInvoiceId;
 					for (MMatchInv mi : miList) {
 						if (AD_Table_ID == MMatchInv.Table_ID) {
-							if (mi.get_ID() != Record_ID && mi.getReversal_ID() != Record_ID)
-								continue;
+							if (mi.get_ID() != Record_ID && mi.getReversal_ID() != Record_ID) {
+								if (mi.getDateAcct().compareTo(cd.getDateAcct()) == 0 && isBeforeBackDateMatchInv) // skip if before the back-date transaction
+									continue;
+							}
+							isBeforeBackDateMatchInv = false;
 						} else if (AD_Table_ID == MMatchPO.Table_ID) {
 							if (mpo != null && mi.getM_Product_ID() != mpo.getM_Product_ID())
 								continue;
@@ -845,9 +876,12 @@ public class DocManager {
 						if (mi.getDateAcct().compareTo(cd.getDateAcct()) < 0)
 							continue;
 						// NOTE: Do not skip reposting match invoices that have already been reposted
-						error = DocManager.postDocument(ass, MMatchInv.Table_ID, mi.get_ID(), true, true, true, trxName);
-						if (error != null)
+						String error = DocManager.postDocument(ass, MMatchInv.Table_ID, mi.get_ID(), true, true, true, trxName);
+						if (error != null) {
+							if (s_log.isLoggable(Level.INFO))
+								s_log.info("Error Posting TableID=" + MMatchInv.Table_ID + ", RecordID=" + mi.get_ID() + " Error: " + error);
 							return error;
+						}
 					}
 				}
     		}
